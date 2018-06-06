@@ -1,3 +1,15 @@
+# Data files
+*.csv
+*.txt
+*.zip
+
+# Files generated for saving object states and visualization
+*.ann
+*.ftr
+*.pkl
+*.dot
+*.png
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
