@@ -21,6 +21,10 @@ def load_dill_object(filename):
         loaded_object = dill.load(input)
         return loaded_object
 
-
-
+def merge_dicts(*args):
+    "Takes in list of dicts, and returns merged dictionary"
+    merged_dict={}
+    for dictionary in args:
+        merged_dict.update(dictionary)
+    return merged_dict
 

@@ -331,18 +331,20 @@ def regex_matcher(parsed_doc,cui_to_morphological_variants_dic,annotation_offset
                         ###CONVERT THIS TO THE SPACY WAY
                         start_index = sentence[stop_index:].index(phrase)
                         stop_index = start_index + len(phrase)
-                        phrase_and_index.append([cui,phrase, start_index + sentence_offset, stop_index + sentence_offset])
+                        phrase_and_index.append({'cui':cui,'ngram':phrase, 'start':start_index + sentence_offset, 'end':stop_index + sentence_offset,'sentence':sent_count})
                         # print phraseAndIndex
                     print phrase_and_index
 
 # def do_quickumls(umls_obj,cui_to_morphological_variants_dic,label_to_cui_dic,cui_network):
 def do_quickumls(umls_container):
+    ### TO-DO: have this take in the path to quickumls, don't iterate directly here (do spacy style folder thing)
+    ### ideally woudl alter this to handle other cuis
     from QuickUMLS.quickumls import QuickUMLS
 
     quickumls_fp = '/usr/local/lib/python2.7/dist-packages/QuickUMLS/quickUMLS-install'
     matcher = QuickUMLS(quickumls_fp=quickumls_fp, overlapping_criteria='length', threshold=.7,
                         similarity_name='cosine')
-    file_range=10
+    file_range=2
     fileNums = range(1,file_range)
     for number in fileNums:
         # if j !=21:
@@ -368,11 +370,21 @@ def do_quickumls(umls_container):
             target_cuis = [cui for cui in umls_container.cui_network]
             if findings['cui'] in target_cuis:
                 anatomical_entities.append(findings)
+        print 'ENTITIES BELOW'
         print anatomical_entities
-        # for sentence in parsed_doc:
-        #     print "SENT"
-        #     print sentence
+        for entity in anatomical_entities:
+            print entity
+        print 'PATH BELOW'
         print fullInputPath
+        regex_matcher(parsed_doc=parsed_doc,cui_to_morphological_variants_dic=umls_container.cui_to_morphological_variants_dic,
+                      annotation_offset=288)
+        ## TO-DO: FIX annotation offset hardcoding
+
+        return anatomical_entities
+
+    ###TO-DO: call appropriate related functions and merge them
+        ##-- do I need a key-value matcher here?
+        ## TO-DO: Look into SNOMEDCT finding status values and chase down
         regex_matcher(parsed_doc=parsed_doc,cui_to_morphological_variants_dic=umls_container.cui_to_morphological_variants_dic,
                       annotation_offset=288)
 
@@ -396,6 +408,63 @@ def do_quickumls(umls_container):
 
 
 
+def make_brat_annotations(finding_list_of_dics,text_doc_path):
+    brat_formatted_finding_list=[] #holds findings after transformed into brat format
+    term_count=1
+    for finding in finding_list_of_dics:
+        brat_formatted_finding='T'+unicode(str(term_count))+u'\t'+finding[u'term']+u' '+unicode(str(finding[u'start']))+u' '+unicode(str(finding[u'end']))+u'\t'+unicode(str(finding[u'ngram']))
+        term_count+=1
+        brat_formatted_finding_list.append(brat_formatted_finding)
+        print brat_formatted_finding
+    print brat_formatted_finding_list
+    annotation_doc_path = text_doc_path.replace('.txt','.ann')
+    with open(annotation_doc_path,'w') as f:
+        for line in brat_formatted_finding_list:
+            f.write(line)
+            f.write('\n')
+
+    # print 'hi'
+    ###def function remove all duplicates
+    # annotation_list = set(tuple(row) for row in annotation_list)
+    # annotation_list = list(list(row) for row in annotation_list)
+    # annotation_list = removeOverlappingPhrases(annotation_list)
+    #
+    # ##### CONVERT OBJECT ANNOTATIONS TO BRAT FORMAT $$$$$$$$
+    # for annotation in annotation_list:
+    #     term_number = 'T' + str(i)
+    #     temp = annotation[1]
+    #     # annotation += [temp]
+    #     annotation_formatted = [annotation[0] + ' ' + str(annotation[2]) + ' ' + str(annotation[3])]
+    #     del annotation[0:]
+    #     annotation += [term_number] + annotation_formatted + [temp]
+    #     i += 1
+    #
+    # ##### MAKE ANNOTATION LIST OF DICTIONARY FOR USE BY CLASSIFIER ####
+    # annotations_list_of_dics = []
+    # for annotation in unaltered_annotations:
+    #     this_dic = {}
+    #     for this_slot in annotation:
+    #         if this_slot[0] in locationHeaders:
+    #             this_dic['location'] = this_slot[0]
+    #         elif this_slot[0] in complicationHeaders:
+    #             this_dic['complication'] = this_slot[0]
+    #         else:
+    #             this_dic[this_slot[0]] = this_slot[1]
+    #     annotations_list_of_dics.append(this_dic)
+    #
+    # print annotation_list
+    # #### WRITE OUT BRAT ANNOTATION FILES#####
+    # brat_annotation_outpath = folderPath + str(number) + "-classified.ann"
+    # csv_file = csv.writer(open(brat_annotation_outpath, 'wb'), delimiter='\t')
+    # csv_file.writerows(annotation_list)
+    # #### WRITE OUT CLASSIFIER ANNOTATION FILES####
+    # classifier_annotation_outpath = folderPath + str(number) + "-classified.ftr"
+    # with open(classifier_annotation_outpath, 'wb') as classifier_file:
+    #     json.dump(annotations_list_of_dics, classifier_file)
+    # print j
+    #
+    #
+    # print "LAST GOOD FILE"
 
 #
 # umls_obj, cui_to_morphological_variants_dic, label_to_cui_dic, cui_network = make_quickumls_annotations(10)
@@ -406,8 +475,9 @@ def do_quickumls(umls_container):
 import util
 # util.save_object(umls_container,'umls-container.pkl')
 umls_container = util.load_object('umls-container.pkl')
-do_quickumls(umls_container)
-
+anatomical_entities = do_quickumls(umls_container)
+print 'look'
+make_brat_annotations(anatomical_entities,'testing.txt')
 ########QUICKUMLS STUFF #################
 # from QuickUMLS.quickumls import QuickUMLS
 # quickumls_fp='/usr/local/lib/python2.7/dist-packages/QuickUMLS/quickUMLS-install'
