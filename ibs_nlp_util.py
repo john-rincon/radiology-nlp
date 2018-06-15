@@ -307,22 +307,50 @@ def removeOverlappingPhrases(foundList):
     lastStartIndex=0
     lastStopIndex=0
     counter=0
+    last_item=0
     from operator import itemgetter
-    foundList.sort(key=itemgetter(-2,-1))
+    # foundList.sort(key=itemgetter(-2,-1))
+    import json
+    json_list=[]
+    for line in foundList:
+        if 'semtypes' in line:
+            line['semtypes']=list(line['semtypes'])
+    for line in foundList:
+        json_version=json.dumps(line,sort_keys=True)
+        json_list.append(json_version)
+    json_list=set(json_list)
+    foundList=[]
+    for line in json_list:
+        foundList.append(json.loads(line))
+    print foundList
+    print type(foundList[0])
+    print foundList[0]['ngram']
+    foundList.sort(key=itemgetter('start','end'))
+    for item in foundList: print item
     # print foundList
-
     for item in foundList:
-        thisStartIndex=item[-2]
-        thisStopIndex=item[-1]
+        current_item=item
+        if current_item == last_item:
+            foundList.remove(current_item)
+            print 'REMOVED'
+            continue
+        starting_list_length=len(foundList)
+        thisStartIndex=item['start']
+        thisStopIndex=item['end']
         # if thisStartIndex <= lastStopIndex and thisStopIndex<=lastStopIndex and thisStartIndex >= lastStartIndex and counter !=0:
-        if thisStartIndex <=lastStartIndex and thisStopIndex >=lastStartIndex:
+        if thisStartIndex==lastStartIndex and thisStopIndex==lastStartIndex:
+            del foundList[counter]
+        elif thisStartIndex <=lastStartIndex and thisStopIndex >=lastStartIndex:
             del foundList[counter-1]
         # elif lastStartIndex<= thisStopIndex and lastStopIndex<= thisStopIndex and counter !=0 and lastStartIndex >= thisStartIndex:
         elif lastStartIndex <= thisStartIndex and lastStopIndex >= thisStartIndex:
             del foundList[counter]
+        ending_list_length=len(foundList)
         lastStartIndex=thisStartIndex
         lastStopIndex=thisStopIndex
-        counter+=1
+        last_item=current_item
+        if starting_list_length == ending_list_length:
+            counter+=1
     if len(foundList)==1: foundList=[foundList[0]]
     return foundList
 

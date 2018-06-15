@@ -104,9 +104,10 @@ class keyValue(object):
         return ### look up some way to print out the values associated with a finding
 
 
-
-def make_np_key_value(kv_object):
-    import numpy as np
+### TO-DO ##
+    #Make keyValue objects output themselves in the appropriate brat or ftr format
+# def make_np_key_value(kv_object):
+#     import numpy as np
     #### do things to convert kv into np representations for each part
 
 

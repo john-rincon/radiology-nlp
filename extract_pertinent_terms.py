@@ -6,10 +6,11 @@ class node(object):
 #node is pointer that points both up to ancestor and down to descendants. Contains functions for traversing tree,
     ## for confirming ancestry, and for outputting graph of tree
     def __init__(self):
-        self.name=None
+        self.id=None
         self.children=[]
         self.parent=[]
         self.term = None
+        self.concept_type=None
     def child(self,child):
         "Gets a node by number"
         return self.children[child]
@@ -19,7 +20,7 @@ class node(object):
     def goto(self,data):
         "Gets immediate child by name (use find_node for finding any node in tree)"
         for child in range(0,len(self.children)):
-            if(self.children[child].name==data):
+            if(self.children[child].id==data):
                 return self.children[child]
     def add(self):
         node1=node()
@@ -28,22 +29,40 @@ class node(object):
         node1.parent=self
         return node1
 
+    def get_children(self,child_list=[],cuis_only=0,cuis_list=[]):
+        ## INPUT = self
+        ## OUTPUT = all child nodes
+        current_node=self
+        while current_node.children:
+            child_list+=current_node.children
+            for child in current_node.children:
+                cuis_list.append(child.id)
+                current_node=child
+                current_node.get_children(child_list=child_list)
+        if cuis_only==1:
+            return cuis_list
+        else:
+            return child_list
+
+
     def is_ancestor(self,term=0,cui=0):
     ###INPUT = self + ancestors term OR cui
     ###OUTPUT = boolean T/F. For use with mapping hierarchies
         current_node = self
         while current_node.parent:
-            if current_node.term == term or current_node.name == cui:
+            if current_node.term == term or current_node.id == cui:
                 return True
             else:
                 current_node=current_node.parent
-        if current_node.term == term or current_node.name == cui:
+        ### catches top-level term
+        print current_node.term,current_node.id
+        if current_node.term == term or current_node.id == cui:
             return True
         else:
             return False
 
-    def find_node(self, name,visited=[],found=[]):
-        "Finds any node by name within the tree. Transverses ENTIRE tree since synonymous names are possible"
+    def find_node(self, id,visited=[],found=[]):
+        "Finds any node by name within the tree. Transverses ENTIRE tree since synonymous names/cuis are possible"
     ####INPUT = name to find (cui)
     ####OUTPUT = list of matching nodes found (may return more than one to account for multiple parents)
         root = self
@@ -51,7 +70,7 @@ class node(object):
             root=root.parent
         child_list = root.children
         i = 0
-        if root.name == name:
+        if root.id == id:
             found.append(root)
             return found
         while child_list:
@@ -62,7 +81,7 @@ class node(object):
                 else:
                     new_child_list+=(child.children)
                     visited.append(child)
-                if child.name == name:
+                if child.id == id:
                     found.append(child)
                     child_list = []
                     break
@@ -129,199 +148,79 @@ class node(object):
             pickle.dump(nodes_list, output, pickle.HIGHEST_PROTOCOL)
 
 
-class snomedNavigator(object):
-    '''snomed builds dictionary from snomed files for ontologies and relationships of interests.
-        and contains functions to navigate and save those files'''
-    def __init__(self,description_full_path=None,stated_relationship_path=None):
-        self.description_full_path=description_full_path  ## path to UMLS MRCONSO.RRF file
-        self.stated_relationship_path=stated_relationship_path  ## path to UMLS MRREL.RRF file
-        self.term_dictionary={} ##dict of dicts that holds MRCONSO data for relevant ontologies
-                                    #format: {ontology name: {cui : term}}
-        self.relationship_dictionary={} #dict that holds relationships between subject cui and pertinent object
-                                            #format: {subject_cui: [relationship, object_cui]}
-        # import node
-
-    # def find_term
-
-
-    def get_terms_and_cuis(self):
-        "gets all terms for given ontologies"
-        with open(self.description_full_path) as description_and_id_list:
-            for line in description_and_id_list:
-                line = line.split('|')
-                cui = line[0]
-                lang = line[1]
-                source = line[11]
-                term_name = line[14]
-                if source not in self.ontologies:
-                    continue
-                else:
-                    if cui in self.term_dictionary[source]:
-                        current_terms= self.term_dictionary[source][cui]
-                        current_terms.append(term_name)
-                        self.term_dictionary[source][cui]=current_terms
-                    else:
-                        self.term_dictionary[source][cui]=[term_name]
-
-    def get_synonyms(self,target_cui,language='ENG',ontologies=0):
-        "Get all synonyms for a cui with given language and ontolgoy (optional)"
-        #NOTE - synonyms from CHV include the adjectival and other forms of important antamoical nouns
-        synonym_list=[]  #list to hold all mappings of target cui
-        if ontologies !=0:
-            if type(ontologies) != list:
-                ontologies=[ontologies]
-        print ontologies
-        with open(self.mrconso_path) as umls_cui_list:
-            for line in umls_cui_list:
-                line = line.split('|')
-                cui = line[0]
-                lang = line[1]
-                source = line[11]
-                term_name = line[14]
-
-                if ontologies !=0:
-                    if source not in ontologies:
-                        continue
-                if lang != language:
-                    continue
-                if cui != target_cui:
-                    continue
-                else:
-                    synonym_list.append(term_name.lower())
-        synonym_list=list(set(synonym_list))
-        return (target_cui,synonym_list)
-
-
-
-
-
-
-    def get_relationships(self,relationship_name=0):
-        "Gets relationsihps for terms in a given ontology (optionally with a given relationship)"
-        ### INPUT = self.ontologies, relationship name optional (e.g. has_regional_part)
-        ### OUTPUT = All the relationships between CUIS in target ontology
-        with open(self.mrrel_path) as umls_relationships:
-            for line in umls_relationships:
-                line = line.split('|')
-                object_source=line[10]
-                subject_source= line[11]
-                if subject_source not in self.ontologies:
-                    continue
-                relationship=line[7]
-                if relationship_name != 0 and relationship != relationship_name:
-                    continue
-                rui = line[8]
-                subject = line[4]
-                object = line[0]
-                if subject == object:
-                    continue
-                if subject in self.relationship_dictionary:
-                    current_relations=self.relationship_dictionary[subject]
-                    current_relations.append([relationship,object])
-                else:
-                    self.relationship_dictionary[subject]=[[relationship,object]]
-
-
-    def get_related_cuis(self,subject_cui,target_relation=0,ontology=0,current_list=[],cui_obj_mapping={},
-                         tree=0,first_call=0):
-        "Returns all cuis related to an input cui, and having a specific relationship (if specified)"
-        ###INPUT = self.relationship_dict, subject_cui, relationship (optional)
-        ###OUTPUT = all cuis related to that subject (optionally with a given relationship)
-        if ontology != 0:
-            ontology_list = [ontology]
-        else:
-            ontology_list = self.ontologies
-        if first_call==1:
-            tree=node()
-            tree.name=subject_cui
-            cui_obj_mapping[subject_cui]=tree
-            for ontology in ontology_list:
-                if subject_cui in self.term_dictionary[ontology]:
-                    tree.term= self.term_dictionary[ontology][subject_cui][0]
-        related_cuis=[]
-        relationship_list=[]
-        if subject_cui in self.relationship_dictionary:
-            relationship_list=self.relationship_dictionary[subject_cui]
-        if target_relation != 0:
-            for relationship in relationship_list:
-                relation = relationship[0]
-                object_cui = relationship[1]
-                if relation == target_relation:
-                    related_cuis.append(object_cui)
-        first_level=[]
-
-        ### SET MECHANISM TO REUTURN AT END OF RECURSION ####
-        if first_call==1:
-            first_level=related_cuis
-            related_cuis.append('*last item')
-            print first_level
-
-        if related_cuis:
-            if type(related_cuis) != list:
-                related_cuis = [related_cuis]
-            current_list += related_cuis
-
-        for object_cui in related_cuis:
-            ### RETURN AT THE END
-            if object_cui == '*last item':
-                del related_cuis[-1] ##remove tracker
-                return cui_obj_mapping
-            if object_cui == 'C4240456': continue ## gets rid of improper dental relationship for GI tract
-            ### Loops through ontologies in dictionary to find cui's. Breaks after first hit. This could be changed
-            ### to handle synonymous terms within the ontology in a less subjective way
-            for ontology in ontology_list:
-                onto_term_dictionary=self.term_dictionary[ontology]
-                if subject_cui in onto_term_dictionary:
-                    parent_term = self.term_dictionary[ontology][subject_cui][0]
-                if parent_term:
-                    break
-            for ontology in ontology_list:
-                onto_term_dictionary=self.term_dictionary[ontology]
-                if object_cui in onto_term_dictionary:
-                    child_term = self.term_dictionary[ontology][object_cui][0]
-                if child_term:
-                    break
-            #################################################
-            tree = cui_obj_mapping[subject_cui]
-            tree=tree.add()
-            tree.name=subject_cui
-            tree.term=child_term
-            cui_obj_mapping[object_cui]= tree
-
-
-            self.get_related_cuis(subject_cui=object_cui,target_relation=target_relation,current_list=current_list,
-                                  cui_obj_mapping=cui_obj_mapping,tree=tree)
-
-    def term_to_cui(self,ontology,term):
-        for cui in self.term_dictionary[ontology]:
-            for term_string in self.term_dictionary[ontology][cui]:
-                term_string = term_string.lower()
-                if term_string == term:
-                    return (cui,term)
-
-
-
 class umlsNavigator(object):
     '''umlsNavigator builds dictionary from UMLS files for ontologies and relationships of interests.
         and contains functions to navigate and save those files'''
-    def __init__(self,mrconso_path=None,ontologies=None,mrrel_path=None):
+    def __init__(self,mrconso_path=None,ontologies=None,mrrel_path=None,concept_type=None,target_relationships=[]):
         self.mrconso_path=mrconso_path  ## path to UMLS MRCONSO.RRF file
-        self.ontologies=ontologies  ## ontology UMLS 3 letter abbreviations, will be used for later functions
         self.mrrel_path=mrrel_path  ## path to UMLS MRREL.RRF file
+
+        self._concept_type=concept_type ## used for quick start with known useful relationships & ontologies for
+                                        ## particular use cases (e.g. surgeries, anatomical locations)
         self.term_dictionary={} ##dict of dicts that holds MRCONSO data for relevant ontologies
                                     #format: {ontology name: {cui : term}}
         self.relationship_dictionary={} #dict that holds relationships between subject cui and pertinent object
                                             #format: {subject_cui: [relationship, object_cui]}
+        self.inverse_term_dictionary={}
+
+        self.ontologies=ontologies  ## ontology UMLS 3 letter abbreviations, will be used for later functions
+        self.target_relationships=target_relationships
+
+
+        self.concept_network_dictionary=False
+
         # import node
 
     # def find_term
+    @property
+    def ontologies(self):
+        return self._ontologies
+
+    @ontologies.setter
+    def ontologies(self, value):
+        if self._concept_type==None:
+            if type(value)==list:
+                self._ontologies=value
+            else:
+                self._ontologies = [value]
+        elif self._concept_type.lower() == 'anatomy':
+            self._ontologies=['FMA']
+            self.get_terms_and_cuis()
+        elif self._concept_type.lower() =='surgery':
+            self._ontologies=['CPT']
+            self.get_terms_and_cuis()
+
+    @property
+    def target_relationships(self):
+        return self._target_relationships
+
+    @target_relationships.setter
+    def target_relationships(self, value):
+        if self._concept_type == None:
+            if type(value) == list:
+                self._target_relationships = value
+            else:
+                self._target_relationships = [value]
+        elif self._concept_type.lower() == 'anatomy':
+            self._target_relationships=['has_regional_part']
+            self.get_relationships()
+        elif self._concept_type.lower() == 'surgery':
+            self._target_relationships=['inverse_isa']
+            self.get_relationships()
 
 
     def get_terms_and_cuis(self):
         "gets all terms for given ontologies"
-        for ontology in self.ontologies:
+        #*Note - default behavior is to take in all of UMLS if no ontologies are specified
+        if self.ontologies:
+            for ontology in self.ontologies:
+                if ontology not in self.term_dictionary:
+                    self.term_dictionary[ontology]={}
+                    self.inverse_term_dictionary[ontology]={}
+        else:
             if ontology not in self.term_dictionary:
-                self.term_dictionary[ontology]={}
+                self.term_dictionary[ontology] = {}
+                self.inverse_term_dictionary[ontology] = {}
         with open(self.mrconso_path) as umls_cui_list:
             for line in umls_cui_list:
                 line = line.split('|')
@@ -329,15 +228,22 @@ class umlsNavigator(object):
                 lang = line[1]
                 source = line[11]
                 term_name = line[14]
-                if source not in self.ontologies:
+                if self.ontologies and source not in self.ontologies:
                     continue
                 else:
                     if cui in self.term_dictionary[source]:
                         current_terms= self.term_dictionary[source][cui]
                         current_terms.append(term_name)
+
                         self.term_dictionary[source][cui]=current_terms
                     else:
                         self.term_dictionary[source][cui]=[term_name]
+                    if term_name in self.inverse_term_dictionary[source]:
+                        current_cuis=self.inverse_term_dictionary[source][term_name]
+                        current_cuis.append(cui)
+                        self.inverse_term_dictionary[source][term_name]=current_cuis
+                    else:
+                        self.inverse_term_dictionary[source][term_name]=[cui]
 
     def get_synonyms(self,target_cui,language='ENG',ontologies=0):
         "Get all synonyms for a cui with given language and ontolgoy (optional)"
@@ -346,7 +252,6 @@ class umlsNavigator(object):
         if ontologies !=0:
             if type(ontologies) != list:
                 ontologies=[ontologies]
-        print ontologies
         with open(self.mrconso_path) as umls_cui_list:
             for line in umls_cui_list:
                 line = line.split('|')
@@ -372,10 +277,11 @@ class umlsNavigator(object):
 
 
 
-    def get_relationships(self,relationship_name=0):
+    def get_relationships(self):
         "Gets relationsihps for terms in a given ontology (optionally with a given relationship)"
         ### INPUT = self.ontologies, relationship name optional (e.g. has_regional_part)
         ### OUTPUT = All the relationships between CUIS in target ontology
+        #*NOTE- default behavior is to return all relationships for ontologies of interest (if none specified)
         with open(self.mrrel_path) as umls_relationships:
             for line in umls_relationships:
                 line = line.split('|')
@@ -384,7 +290,7 @@ class umlsNavigator(object):
                 if subject_source not in self.ontologies:
                     continue
                 relationship=line[7]
-                if relationship_name != 0 and relationship != relationship_name:
+                if self.target_relationships and relationship not in self.target_relationships:
                     continue
                 rui = line[8]
                 subject = line[4]
@@ -399,17 +305,21 @@ class umlsNavigator(object):
 
 
     def get_related_cuis(self,subject_cui,target_relation=0,ontology=0,current_list=[],cui_obj_mapping={},
-                         tree=0,first_call=0):
+                         tree=0,first_call=1):
         "Returns all cuis related to an input cui, and having a specific relationship (if specified)"
         ###INPUT = self.relationship_dict, subject_cui, relationship (optional)
         ###OUTPUT = all cuis related to that subject (optionally with a given relationship)
+        if target_relation==0:
+            target_relation = self.target_relationships
+        elif type(target_relation) != list:
+            target_relation=[target_relation]
         if ontology != 0:
             ontology_list = [ontology]
         else:
             ontology_list = self.ontologies
         if first_call==1:
             tree=node()
-            tree.name=subject_cui
+            tree.id=subject_cui
             cui_obj_mapping[subject_cui]=tree
             for ontology in ontology_list:
                 if subject_cui in self.term_dictionary[ontology]:
@@ -422,7 +332,7 @@ class umlsNavigator(object):
             for relationship in relationship_list:
                 relation = relationship[0]
                 object_cui = relationship[1]
-                if relation == target_relation:
+                if relation in target_relation:
                     related_cuis.append(object_cui)
         first_level=[]
 
@@ -433,6 +343,7 @@ class umlsNavigator(object):
             print first_level
 
         if related_cuis:
+            print related_cuis
             if type(related_cuis) != list:
                 related_cuis = [related_cuis]
             current_list += related_cuis
@@ -441,8 +352,10 @@ class umlsNavigator(object):
             ### RETURN AT THE END
             if object_cui == '*last item':
                 del related_cuis[-1] ##remove tracker
+                self.concept_network_dictionary=cui_obj_mapping
                 return cui_obj_mapping
             if object_cui == 'C4240456': continue ## gets rid of improper dental relationship for GI tract
+            if object_cui in cui_obj_mapping: continue ## helps avoid infite regress with circular definitions
             ### Loops through ontologies in dictionary to find cui's. Breaks after first hit. This could be changed
             ### to handle synonymous terms within the ontology in a less subjective way
             for ontology in ontology_list:
@@ -460,18 +373,23 @@ class umlsNavigator(object):
             #################################################
             tree = cui_obj_mapping[subject_cui]
             tree=tree.add()
-            tree.name=subject_cui
+            tree.id=subject_cui
             tree.term=child_term
+            if self._concept_type:
+                tree.concept_type = self._concept_type
             cui_obj_mapping[object_cui]= tree
 
 
             self.get_related_cuis(subject_cui=object_cui,target_relation=target_relation,current_list=current_list,
-                                  cui_obj_mapping=cui_obj_mapping,tree=tree)
+                                  cui_obj_mapping=cui_obj_mapping,tree=tree,first_call=0)
 
-    def term_to_cui(self,ontology,term):
+    def term_to_cui(self,term,ontology=0):
+        if ontology==0: ## Default to selecting first added ontology (usually only working with 1)
+            ontology=self.ontologies[0]
         for cui in self.term_dictionary[ontology]:
             for term_string in self.term_dictionary[ontology][cui]:
-                term_string = term_string.lower()
+                term=term.lower()
+                term_string=term_string.lower()
                 if term_string == term:
                     return (cui,term)
 
@@ -490,6 +408,8 @@ class snomedNavigator(object):
         # format: {source_id: [relationship, destination_id]}
         self.inverse_relationship_dictionary = {}  # dict that hodls the inverse of relationships
         self.umls_navigator = False
+        self.concept_network_dictionary = False
+        self.cui_mappings = {}
         # import node
 
     # def find_term
@@ -510,39 +430,11 @@ class snomedNavigator(object):
                     if i < 5: print self.term_dictionary
                     i += 1
 
-    def get_synonyms(self, target_cui, language='ENG', ontologies=0):
-        "Get all synonyms for a cui with given language and ontolgoy (optional)"
-        # NOTE - synonyms from CHV include the adjectival and other forms of important antamoical nouns
-        synonym_list = []  # list to hold all mappings of target cui
-        if ontologies != 0:
-            if type(ontologies) != list:
-                ontologies = [ontologies]
-        print ontologies
-        with open(self.mrconso_path) as umls_cui_list:
-            for line in umls_cui_list:
-                line = line.split('|')
-                cui = line[0]
-                lang = line[1]
-                source = line[11]
-                term_name = line[14]
-
-                if ontologies != 0:
-                    if source not in ontologies:
-                        continue
-                if lang != language:
-                    continue
-                if cui != target_cui:
-                    continue
-                else:
-                    synonym_list.append(term_name.lower())
-        synonym_list = list(set(synonym_list))
-        return (target_cui, synonym_list)
 
     def get_relationships(self, relationship_name=0):
-        "Gets relationsihps for terms in a given ontology (optionally with a given relationship)"
-        # unclear whether specifying a relationship is necessary given small size of full set
-        ### INPUT = self.ontologies, relationship name optional (e.g. has_regional_part)
-        ### OUTPUT = All the relationships between CUIS in target ontology
+        "Gets relationsihps for terms in SNOMEDCT"
+        ### INPUT = self, and optional relationship name
+        ### OUTPUT = All the relationships between concepts in SNOMEDCT
         with open(self.stated_relationship_path) as snomed_relationships:
             i = 0
             for line in snomed_relationships:
@@ -587,7 +479,7 @@ class snomedNavigator(object):
             relationship_dictionary = self.inverse_relationship_dictionary
         if first_call == 1:
             tree = node()
-            tree.name = destination_id
+            tree.id = destination_id
             cui_obj_mapping[destination_id] = tree
             if destination_id in self.term_dictionary:
                 tree.term = self.term_dictionary[destination_id]
@@ -646,7 +538,7 @@ class snomedNavigator(object):
             tree = cui_obj_mapping[destination_id]
             # if child_term:
             tree = tree.add()
-            tree.name = source_id
+            tree.id = source_id
             tree.term = child_term
             cui_obj_mapping[source_id] = tree
 
@@ -666,6 +558,12 @@ class snomedNavigator(object):
         if concept_type.lower() == 'negation':
             object_tree = self.get_related_cuis(destination_id='272519000', target_relation='116680003',
                                                 inverse=1)
+            ### Manually add in 'Normal', which isn't in negation finding hierarchy
+            normal_node = node()
+            normal_node.term='Normal (qualifier value)'
+            normal_node.id='17621005'
+            object_tree['17621005'] = normal_node
+
         elif concept_type.lower() == 'qualifier':
             object_tree = self.get_related_cuis(destination_id='362981000', target_relation='116680003',
                                                 inverse=1)
@@ -697,7 +595,10 @@ class snomedNavigator(object):
 
         else:
             return NameError
-        return object_tree
+        for this_node in object_tree:
+            object_tree[this_node].concept_type=concept_type
+        self.concept_network_dictionary=object_tree
+        # return object_tree
 
 
         #### Example call ###
@@ -733,70 +634,31 @@ class snomedNavigator(object):
         #         term_string = term_string.lower()
         #         if term_string == term:
         #             return (cui,term)
+    def get_cui_mappings(self):
+        if self.concept_network_dictionary == False:
+            print 'Error - No concept graph created'
+            return self.concept_network_dictionary
+        else:
+            for item in self.concept_network_dictionary:
+                #     print this_tree[item].id
+                term = self.concept_network_dictionary[item].term
+                mapping= snowy.term_to_umls_cui(term)
+                cuis=mapping[0]
+                string = mapping[1]
+                # if cuis and len(cuis)>1:
+                    # print '**start**'
+                    # print cuis
+                    # print term
+                    # print '***'
+                if cuis:
+                    for cui in cuis:
+                        self.cui_mappings[cui]=self.concept_network_dictionary[item]
 
 
 
 
 
-###### CODE TO MAKE UMLS OBJECT #########
-import util
-#
-# umls_obj = umlsNavigator(mrconso_path='/usr/share/2017AB-full/2017AB/META/MRCONSO.RRF',
-#                   mrrel_path='/usr/share/2017AB-full/2017AB/META/MRREL.RRF', ontologies=['FMA'])
-# umls_obj.get_terms_and_cuis()
-# umls_obj.get_relationships(relationship_name='has_regional_part')
-# util.save_dill_object(umls_obj,'dill-object.pkl')
-# # util.save_object(umls_obj,'umls-object.pkl')
-# umls_obj = util.load_object('umls-object.pkl')
-# umls_obj=util.load_dill_object('dill-object.pkl')
-# print umls_obj
-# print umls_obj.term_dictionary
-# this_tree=umls_obj.get_related_cuis(subject_cui='C0017189',target_relation='has_regional_part',first_call=1)
-## tree has all the good cui objects
-# x= umls_obj.term_to_cui('FMA','descending colon')
-# print x
-# for key in this_tree: print key
 
-# print umls_obj.get_synonyms(target_cui=x[0],ontologies='CHV')
-
-#### GET REGEX RELATED TERMS ###
-# location_list=['ileum','duodenum','jejunum','ascending colon','transverse colon','descending colon','sigmoid colon','rectum','stomach','esophagus']
-# count=0
-# for location in location_list:
-#     print count
-#     print umls_obj.get_synonyms(umls_obj.term_to_cui('FMA',location)[0],ontologies='CHV')
-#     count +=1
-
-##### REGEX PART ABOVE ##########################3
-#### normal code for running things is below here ####
-
-### TO-DO ####
-##1. Separate CUI extraction and term extraction/visualization
-##2. Will need to use regex matcher for expanded queries + simstring for normal queries and select filter for double counting
-##3. Overall flow
-    #A. Get CUIs list to compare against metamap matches (general tool)
-        ##Can do this for anatomical areas, negations, and qualifiers (See below)
-        ##Should I switch to a NegEx approach to this?
-            ###If we can open the QuickUMLS up could do more advanced dependency parsing
-    #B. Get terms lists (expanded from cuis) for regex matching and expansion
-        ## need this to catch things like ileal-, ileo, ileosigmoid, etc...
-    #C. Rectify the above two
-    #D. Use spaCy + simstring matching for the activity terms from Ryan
-    #E. output .ann & .ftr
-
-###NOTES for adding negation & qualifiers ###
-    #>. Chasing down "Finding status values" from SNOMED WILL GET A LIST OF QUALIFIERS
-        ### Certainties = C0439543 (parent isn't mapped...)
-        ### Change findings =
-        ### Degree findings = C0442795
-    #>. Chasing down "Findings Values" can get negation findings, degree findings,normality findings
-        # (not grouped with negation, so need to add it + it's subclass in)
-        ### findings values = C0442719
-        ### C0205307 = CUI for normal
-        ### absence findings for negation C0442733
-    #> ***USE 'inverse_isa' relationship to go to bottom
-
-#######SNOMED is COMPLETELY!!! fucked in UMLS ############
 
 
 ###How to handle annotations?
@@ -837,3 +699,18 @@ import util
         ### MRXNW_ENG.RRF (has list of related lexical variants)
 
 ### p. 84 has key words to look for related to stricture
+
+
+
+### Look into making a customized qualifer list (try mix of Finding values + Finding status values + General information qualifier, + Result Comments + Ranked categories + Descriptor + Modifiers (see all))
+# VERSUS Qualifier value)
+    #qualifier value is super class, but has lots of noise (unnecssary sub classes)
+## make custom list for negation  (Absence findings + normal)
+
+
+#### FINAL TO DO
+    ### Make above custom lists for easy add in
+    ### Pull these into the QuickUMLS annotation workflow
+    ### Make pattern matching annotation
+    ### Ensure taht no overlaps exists (order by starting index, and iterate through)
+    ### Make annotations and push all to wiki

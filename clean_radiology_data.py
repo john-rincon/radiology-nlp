@@ -180,7 +180,7 @@ def write_out_for_brat(classified_texts,output_folder):
 
     annotation_dic={}
     if output_folder[-1] != '/':
-        return 'ERROR'
+        output_folder+='/'
     header_row=classified_texts[0]
     header_index=0
     for header in header_row:
@@ -200,19 +200,13 @@ def write_out_for_brat(classified_texts,output_folder):
         csv_file.writerow('')
         file_count+=1
 
+def easy_clean_and_brat_export(input_csv_path,output_brat_folder):
+    input_csv_path = os.path.expanduser('~/Desktop/nlp_work/nlp-rad-data2.csv')  ##to Ryan's .csv file
+    radiology_files = list(csv.reader(open(input_csv_path, 'rU'), delimiter=','))
+    read_reports = remove_unread_reports(radiology_files)
+    fixed_spacing = fix_report_spacing([line[14] for line in read_reports])
+    trimmed_text = cut_unnecessary_sections(fixed_spacing)
+    classified_texts = add_labels(trimmed_text, read_reports)
+    write_out_for_brat(classified_texts,output_brat_folder)
 
-
-######### TRANSFORM AND CLEAN TEXT ###################
-# filepath=os.path.expanduser('~/Desktop/nlp_work/nlp-rad-data2.csv') ##to Ryan's .csv file
-# radiology_files= list(csv.reader(open(filepath,'rU'),delimiter=','))
-# read_reports = remove_unread_reports(radiology_files)
-# fixed_spacing=fix_report_spacing([line[14] for line in read_reports])
-# trimmed_text=cut_unnecessary_sections(fixed_spacing)
-# classified_texts= add_labels(trimmed_text,read_reports)
-# # write_out_for_brat(classified_texts,'/home/john/Desktop/nlp_work/test-annotations')
-# ###### WRITEOUT TEXT #########################
-# classified_reports_outpath='/home/john/Desktop/nlp_work/classified-report-text-test.csv'
-# csv_file=csv.writer(open(classified_reports_outpath,'wb'),delimiter=',')
-# csv_file.writerows(classified_texts)
-
-
+# easy_clean_and_brat_export(input_csv_path='/home/john/Desktop/nlp_work/nlp-rad-data2.csv',output_brat_folder= '/home/john/Desktop/nlp_work/test_dir')
