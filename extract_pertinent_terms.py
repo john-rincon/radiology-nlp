@@ -35,6 +35,8 @@ class node(object):
         current_node=self
         while current_node.children:
             child_list+=current_node.children
+            child_list=set(child_list)
+            child_list=list(child_list)
             for child in current_node.children:
                 cuis_list.append(child.id)
                 current_node=child
@@ -55,7 +57,6 @@ class node(object):
             else:
                 current_node=current_node.parent
         ### catches top-level term
-        print current_node.term,current_node.id
         if current_node.term == term or current_node.id == cui:
             return True
         else:
@@ -151,7 +152,7 @@ class node(object):
 class umlsNavigator(object):
     '''umlsNavigator builds dictionary from UMLS files for ontologies and relationships of interests.
         and contains functions to navigate and save those files'''
-    def __init__(self,mrconso_path=None,ontologies=None,mrrel_path=None,concept_type=None,target_relationships=[]):
+    def __init__(self,mrconso_path=None,ontologies=None,mrrel_path=None,concept_type=None,target_relationships=[], target_terms=None):
         self.mrconso_path=mrconso_path  ## path to UMLS MRCONSO.RRF file
         self.mrrel_path=mrrel_path  ## path to UMLS MRREL.RRF file
 
@@ -166,8 +167,11 @@ class umlsNavigator(object):
         self.ontologies=ontologies  ## ontology UMLS 3 letter abbreviations, will be used for later functions
         self.target_relationships=target_relationships
 
-
         self.concept_network_dictionary=False
+        self._target_terms=target_terms
+
+        self.target_term_mappings=None
+        self.target_morphological_variants={}
 
         # import node
 
@@ -207,6 +211,26 @@ class umlsNavigator(object):
         elif self._concept_type.lower() == 'surgery':
             self._target_relationships=['inverse_isa']
             self.get_relationships()
+    @property
+    def target_term_mappings(self):
+        return self._target_term_mappings
+
+    @target_term_mappings.setter
+    def target_term_mappings(self,value):
+        'setting'
+        if self._target_terms == None:
+            self._target_terms=value
+            print 'target_terms1'
+        else:
+            print 'target_terms2'
+            print self._target_terms
+            target_terms_to_cui_dic={}
+            for term in self._target_terms:
+                mapping=self.term_to_cui(term)
+                cui=mapping[0]
+                term = mapping[1]
+                target_terms_to_cui_dic[term]=cui
+            self._target_term_mappings=target_terms_to_cui_dic
 
 
     def get_terms_and_cuis(self):
@@ -272,9 +296,17 @@ class umlsNavigator(object):
         synonym_list=list(set(synonym_list))
         return (target_cui,synonym_list)
 
-
-
-
+    def find_target_morphological_variants(self):
+        "Finds all synonyms and variants (UMLS and custom) for target cuis. Useful for regex"
+        target_mappings = self.target_term_mappings
+        for term in target_mappings:
+            cui = target_mappings[term]
+            (target_cui, variants) = self.get_synonyms(target_cui=cui)
+            self.target_morphological_variants[target_cui] = variants
+        if 'Surgery' in self.target_term_mappings:
+            surgery_cui = self.target_term_mappings['Surgery']
+            current_variants = self.target_morphological_variants[surgery_cui]
+            current_variants+=['centesis', 'clasia', 'desis', 'ectomy', 'opsy', 'oscopy', 'stomy', 'tomy', 'pexy', 'plasty', 'rrhaphy']
 
 
     def get_relationships(self):

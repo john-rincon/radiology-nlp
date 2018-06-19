@@ -1,6 +1,8 @@
 class keyValue(object):
-    def __init__(self,concept='',concept_type='',negation='',activity_terms='',concept_related_terms='',modifiers='',sentence=''):
+    def __init__(self,concept='',concept_type='',negation='',activity_terms='',concept_related_terms='',modifiers='',sentence='',source_document_path='',mapped_term=''):
         self.__concept=concept  ##ileum, jejenum, stricture, etc...
+        self.mapped_concept=''
+        self.mapped_term=mapped_term
         self.__negation=negation
         self.__activity_terms=activity_terms
         self.__concept_related_terms=concept_related_terms  ##actual words that indicate the location or complication
@@ -8,6 +10,7 @@ class keyValue(object):
         self.__modifiers=modifiers
         self.__concept_type=concept_type  ##location or complication
         self.sentence=sentence
+        self.source_document_path=source_document_path
     #    self.__concept=10
     #     self.__concept=concept
         # self.concept_related_terms=concept_related_terms

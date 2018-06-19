@@ -2,6 +2,11 @@
 *.csv
 *.txt
 *.zip
+*.json
+
+# Scratch and test files
+scratch-file.py
+test.py
 
 # Files generated for saving object states and visualization
 *.ann
