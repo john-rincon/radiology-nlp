@@ -125,7 +125,6 @@ class node(object):
         ### Get to top root ###
         while self.parent:
             self = self.parent
-        print 'start - ' + self.term
         nodes_list=[self]
         visited=[]
         child_list=self.children
@@ -149,6 +148,58 @@ class node(object):
             pickle.dump(nodes_list, output, pickle.HIGHEST_PROTOCOL)
 
 
+class cuiContainer(object):
+    def __init__(self, cui_to_morphological_variants_dic=None, label_to_cui_dic=None, cui_network=None,
+                 negation_cuis=None, qualifier_cuis=None, subject_cuis=None, concept_type="General",
+                 ancestor_mappings=0):
+        self._concept_type = [concept_type]
+        self._cui_to_morphological_variants_dic = {concept_type: cui_to_morphological_variants_dic}
+        self._subject_cuis = {concept_type: subject_cuis}
+        self._ancestor_mappings = {concept_type: ancestor_mappings}
+
+    @property
+    def concept_type(self):
+        if type(self._concept_type) != list:
+            self._concept_type = [self._concept_type]
+        return self._concept_type
+
+    @concept_type.setter
+    def concept_type(self, value):
+        if self._concept_type == None:
+            self._concept_type = [value]
+        else:
+            if type(self._concept_type) != list:
+                self._concept_type = [self._concept_type]
+            self._concept_type.append(value)
+
+    @property
+    def cui_to_morphological_variants_dic(self):
+        return self._cui_to_morphological_variants_dic
+
+    @cui_to_morphological_variants_dic.setter
+    ### assumes that new labels and new variants added simultaneously
+    def cui_to_morphological_variants_dic(self, value):
+        self._cui_to_morphological_variants_dic[self._concept_type[-1]] = value
+
+    @property
+    def subject_cuis(self):
+        return self._subject_cuis
+
+    @subject_cuis.setter
+    ### assumes that new labels and new variants added simultaneously
+    def subject_cuis(self, value):
+        self._subject_cuis[self._concept_type[-1]] = value
+
+    @property
+    def ancestor_mappings(self):
+        return self._ancestor_mappings
+
+    @ancestor_mappings.setter
+    ### assumes that new labels and new variants added simultaneously
+    def ancestor_mappings(self, value):
+        self._ancestor_mappings[self._concept_type[-1]] = value
+
+
 class umlsNavigator(object):
     '''umlsNavigator builds dictionary from UMLS files for ontologies and relationships of interests.
         and contains functions to navigate and save those files'''
@@ -160,7 +211,7 @@ class umlsNavigator(object):
                                         ## particular use cases (e.g. surgeries, anatomical locations)
         self.term_dictionary={} ##dict of dicts that holds MRCONSO data for relevant ontologies
                                     #format: {ontology name: {cui : term}}
-        self.relationship_dictionary={} #dict that holds relationships between subject cui and pertinent object
+        self._relationship_dictionary={} #dict that holds relationships between subject cui and pertinent object
                                             #format: {subject_cui: [relationship, object_cui]}
         self.inverse_term_dictionary={}
 
@@ -168,10 +219,11 @@ class umlsNavigator(object):
         self.target_relationships=target_relationships
 
         self.concept_network_dictionary=False
+        self.target_morphological_variants={}
         self._target_terms=target_terms
 
         self.target_term_mappings=None
-        self.target_morphological_variants={}
+        self.ancestor_mappings={}
 
         # import node
 
@@ -187,6 +239,7 @@ class umlsNavigator(object):
                 self._ontologies=value
             else:
                 self._ontologies = [value]
+            self.get_terms_and_cuis()
         elif self._concept_type.lower() == 'anatomy':
             self._ontologies=['FMA']
             self.get_terms_and_cuis()
@@ -219,21 +272,21 @@ class umlsNavigator(object):
     def target_term_mappings(self,value):
         'setting'
         if self._target_terms == None:
-            self._target_terms=value
-            print 'target_terms1'
+            self._target_term_mappings=value
         else:
-            print 'target_terms2'
-            print self._target_terms
             target_terms_to_cui_dic={}
+            ### find cuis for target terms ###
             for term in self._target_terms:
                 mapping=self.term_to_cui(term)
                 cui=mapping[0]
                 term = mapping[1]
                 target_terms_to_cui_dic[term]=cui
             self._target_term_mappings=target_terms_to_cui_dic
+            ### find all morphological variants for target cuis (for use by regex) ###
+            self.find_target_morphological_variants()
 
 
-    def get_terms_and_cuis(self):
+    def get_terms_and_cuis(self,ontology=0):
         "gets all terms for given ontologies"
         #*Note - default behavior is to take in all of UMLS if no ontologies are specified
         if self.ontologies:
@@ -329,12 +382,24 @@ class umlsNavigator(object):
                 object = line[0]
                 if subject == object:
                     continue
-                if subject in self.relationship_dictionary:
-                    current_relations=self.relationship_dictionary[subject]
+                if subject in self._relationship_dictionary:
+                    current_relations=self._relationship_dictionary[subject]
                     current_relations.append([relationship,object])
                 else:
-                    self.relationship_dictionary[subject]=[[relationship,object]]
+                    self._relationship_dictionary[subject]=[[relationship,object]]
 
+    def make_ancestry_mappings(self,possible_descendant):
+        "Checks if a node is descended from target node, and adds to mapping"
+        term_mappings = self._target_term_mappings
+        found_ancestor = 0
+        for term in term_mappings:
+            is_ancestor = possible_descendant.is_ancestor(cui=term_mappings[term])
+            if is_ancestor:
+                self.ancestor_mappings[possible_descendant.id] = term
+                found_ancestor = 1
+                break
+        if found_ancestor != 1:
+            self.ancestor_mappings[possible_descendant.id] = possible_descendant.term
 
     def get_related_cuis(self,subject_cui,target_relation=0,ontology=0,current_list=[],cui_obj_mapping={},
                          tree=0,first_call=1):
@@ -353,13 +418,15 @@ class umlsNavigator(object):
             tree=node()
             tree.id=subject_cui
             cui_obj_mapping[subject_cui]=tree
+            if self._target_term_mappings:
+                self.make_ancestry_mappings(tree)
             for ontology in ontology_list:
                 if subject_cui in self.term_dictionary[ontology]:
                     tree.term= self.term_dictionary[ontology][subject_cui][0]
         related_cuis=[]
         relationship_list=[]
-        if subject_cui in self.relationship_dictionary:
-            relationship_list=self.relationship_dictionary[subject_cui]
+        if subject_cui in self._relationship_dictionary:
+            relationship_list=self._relationship_dictionary[subject_cui]
         if target_relation != 0:
             for relationship in relationship_list:
                 relation = relationship[0]
@@ -372,10 +439,8 @@ class umlsNavigator(object):
         if first_call==1:
             first_level=related_cuis
             related_cuis.append('*last item')
-            print first_level
 
         if related_cuis:
-            print related_cuis
             if type(related_cuis) != list:
                 related_cuis = [related_cuis]
             current_list += related_cuis
@@ -405,8 +470,10 @@ class umlsNavigator(object):
             #################################################
             tree = cui_obj_mapping[subject_cui]
             tree=tree.add()
-            tree.id=subject_cui
+            tree.id=object_cui # was subject
             tree.term=child_term
+            if self._target_term_mappings:
+                self.make_ancestry_mappings(tree)
             if self._concept_type:
                 tree.concept_type = self._concept_type
             cui_obj_mapping[object_cui]= tree
@@ -425,33 +492,89 @@ class umlsNavigator(object):
                 if term_string == term:
                     return (cui,term)
 
-    # def verify_tree
+    def pour_container(self, concept_type, cui_container=0):
+        if self.ancestor_mappings == {}:
+            flipped_mappings={}
+            for term in self._target_term_mappings:
+                cui = self._target_term_mappings[term]
+                flipped_mappings[cui]=term
+            self.ancestor_mappings=flipped_mappings
+        if cui_container == 0:
+            if self.concept_network_dictionary:
+                cui_container = cuiContainer(concept_type=concept_type, ancestor_mappings=self.ancestor_mappings,
+                                             cui_to_morphological_variants_dic=self.target_morphological_variants,subject_cuis=[cui for cui in self.concept_network_dictionary])
+            else:
+                subject_cuis=[]
+                for term in self._target_term_mappings:
+                    subject_cuis.append(self._target_term_mappings[term])
+                cui_container = cuiContainer(concept_type=concept_type, ancestor_mappings=self.ancestor_mappings,
+                                             cui_to_morphological_variants_dic=self.target_morphological_variants,subject_cuis=subject_cuis)
+        else:
+            if self.concept_network_dictionary:
+                ##update container
+                subject_cuis = [cui for cui in self.concept_network_dictionary]
+            elif self._target_term_mappings:
+                subject_cuis=[]
+                for term in self._target_term_mappings:
+                    subject_cuis.append(self._target_term_mappings[term])
+            else:
+                subject_cuis=[]
+                for cui in self.ancestor_mappings:
+                    subject_cuis.append(cui)
+            cui_container.concept_type = concept_type
+            cui_container.subject_cuis=subject_cuis
+            cui_container.ancestor_mappings = self.ancestor_mappings
+            cui_container.cui_to_morphological_variants_dic = self.target_morphological_variants
+
+
+        return cui_container
+
+
+                # def verify_tree
 
 class snomedNavigator(object):
     '''snomed builds dictionary from snomed files for ontologies and relationships of interests.
         and contains functions to navigate and save those files'''
 
     def __init__(self, description_full_path=None, stated_relationship_path=None):
-        self.description_full_path = description_full_path  ## path to UMLS MRCONSO.RRF file
-        self.stated_relationship_path = stated_relationship_path  ## path to UMLS MRREL.RRF file
+        self._description_full_path=description_full_path   ## path to UMLS MRCONSO.RRF file
+        self._stated_relationship_path = stated_relationship_path ## path to UMLS MRREL.RRF file
         self.term_dictionary = {}  ##dict of dicts that holds MRCONSO data for relevant ontologies
-        # format: {ontology name: {cui : term}}
+            # format: {ontology name: {cui : term}}
         self.relationship_dictionary = {}  # dict that holds relationships between subject cui and pertinent object
         # format: {source_id: [relationship, destination_id]}
         self.inverse_relationship_dictionary = {}  # dict that hodls the inverse of relationships
         self.umls_navigator = False
         self.concept_network_dictionary = False
         self.cui_mappings = {}
+        self.ontologies=[]
+        self.morphological_variants=None
+
         # import node
 
     # def find_term
+
+    @property
+    def ontologies(self):
+        return self._ontologies
+
+    @ontologies.setter
+    def ontologies(self, value):
+        if self._description_full_path != None:
+            self._ontologies = ['SNOMEDCT_US']
+            self.get_terms_and_cuis()
+        if self._stated_relationship_path !=None:
+            self._ontologies = ['SNOMEDCT_US']
+            self.get_relationships()
+
+
 
 
     def get_terms_and_cuis(self):
         "gets all terms for given ontologies"
         # term_dictionary = {}
         i = 0
-        with open(self.description_full_path) as description_and_id_list:
+        with open(self._description_full_path) as description_and_id_list:
             for line in description_and_id_list:
                 line = line.split('\t')
                 cui = line[4]
@@ -459,15 +582,13 @@ class snomedNavigator(object):
                 if cui not in self.term_dictionary:
                     self.term_dictionary[cui] = term_name
 
-                    if i < 5: print self.term_dictionary
-                    i += 1
 
 
     def get_relationships(self, relationship_name=0):
         "Gets relationsihps for terms in SNOMEDCT"
         ### INPUT = self, and optional relationship name
         ### OUTPUT = All the relationships between concepts in SNOMEDCT
-        with open(self.stated_relationship_path) as snomed_relationships:
+        with open(self._stated_relationship_path) as snomed_relationships:
             i = 0
             for line in snomed_relationships:
                 if i == 0:
@@ -656,7 +777,7 @@ class snomedNavigator(object):
             for cui in umls_navigator.term_dictionary[ontology]:
                 for term_string in umls_navigator.term_dictionary[ontology][cui]:
                     snomed_reversed_terms_dict[term_string] = cui
-            umls_navigator.reverse_term_dictionary = reversed_dic
+            umls_navigator.inverse_term_dictionary = reversed_dic
 
         ### BRUTE FORCE SLOW SEARCH
         cui = umls_navigator.inverse_term_dictionary[ontology].get(term, None)
@@ -674,7 +795,7 @@ class snomedNavigator(object):
             for item in self.concept_network_dictionary:
                 #     print this_tree[item].id
                 term = self.concept_network_dictionary[item].term
-                mapping= snowy.term_to_umls_cui(term)
+                mapping= self.term_to_umls_cui(term)
                 cuis=mapping[0]
                 string = mapping[1]
                 # if cuis and len(cuis)>1:
@@ -685,6 +806,35 @@ class snomedNavigator(object):
                 if cuis:
                     for cui in cuis:
                         self.cui_mappings[cui]=self.concept_network_dictionary[item]
+
+    def get_cui_morphological_variants(self):
+        term_to_cui={}
+        umls_navigator=self.umls_navigator
+        for cui in self.cui_mappings:
+            term_to_cui[self.cui_mappings[cui].term]=cui
+        umls_navigator.target_term_mappings=term_to_cui
+        umls_navigator.find_target_morphological_variants()
+        self.morphological_variants=umls_navigator.target_morphological_variants
+
+
+
+    def pour_container(self, concept_type, cui_container=0):
+        cui_term_dict={}
+        for cui in self.cui_mappings:
+            cui_term_dict[cui]=self.cui_mappings[cui].term
+        if cui_container ==0:
+                cui_container = cuiContainer(concept_type=concept_type,
+                                             ancestor_mappings=cui_term_dict,
+                                             cui_to_morphological_variants_dic=self.morphological_variants,
+                                             subject_cuis=cui_term_dict)
+
+        else:
+            cui_container.subject_cuis = cui_term_dict
+            cui_container.concept_type = concept_type
+            cui_container.ancestor_mappings = cui_term_dict
+            cui_container.cui_to_morphological_variants_dic = self.morphological_variants
+
+        return cui_container
 
 
 

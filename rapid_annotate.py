@@ -13,7 +13,7 @@
 import csv,re
 inputPath='/home/john/Desktop/nlp_work/full-key-value_stidham.csv'
 inputFile = list(csv.reader(open(inputPath, 'rU'), delimiter=','))
-annotation_offset=288
+# annotation_offset=288
 #
 # def annotate(fileToAnnotate):
 #     for line in inputFile:
@@ -41,7 +41,7 @@ def findComplications (fileToAnnotate):
 def findSeverity (fileToAnnotate,locations,complications):
     #using previously found locations and complications, find severity data related to each
     x=1
-print inputFile
+# print inputFile
 
 modifiers=[]
 activityTerms=[]
@@ -270,27 +270,58 @@ class umlsNavigator(object):
 
 #### To-Do: make mulitple cui containers (one for each types of object), and pass them all to the do_quick_umls as a list
 class cuiContainer(object):
-    def __init__(self,cui_to_morphological_variants_dic=None,label_to_cui_dic=None,cui_network=None,negation_cuis=None,qualifier_cuis=None,subject_cuis=None,container_type=None,ancestor_mappings=0):
-        self.container_type=container_type
-        self.cui_to_morphological_variants_dic = cui_to_morphological_variants_dic
-        self.label_to_cui_dic = label_to_cui_dic
-        self.cui_network= cui_network
-        self.negation_cuis=negation_cuis
-        self.qualifier_cuis=qualifier_cuis
-        self.subject_cuis=subject_cuis
-        self.ancestor_mappings=ancestor_mappings
+    def __init__(self,cui_to_morphological_variants_dic=None,label_to_cui_dic=None,cui_network=None,negation_cuis=None,qualifier_cuis=None,subject_cuis=None,concept_type="General",ancestor_mappings=0):
+        self._concept_type=[concept_type]
+        self._cui_to_morphological_variants_dic = {concept_type:cui_to_morphological_variants_dic}
+        self._subject_cuis={concept_type:subject_cuis}
+        self._ancestor_mappings={concept_type:ancestor_mappings}
 
-        @property
-        def ancestor_mappings(self):
-            return self._ancestor_mappings
+   
 
-        @ancestor_mappings.setter
-        def activity_terms(self, value):
-            if self._ancestor_mappings:
-                from util import merge_dicts
-                self._ancestor_mappings = merge_dicts(self._ancestor_mappings,value)
-            else:
-                self._ancestor_mappings=value
+    @property
+    def concept_type(self):
+        if type(self._concept_type) != list:
+            self._concept_type = [self._concept_type]
+        return self._concept_type
+
+    @concept_type.setter
+    def concept_type(self, value):
+        if self._concept_type == None:
+            self._concept_type = [value]
+        else:
+            if type(self._concept_type) != list:
+                self._concept_type=[self._concept_type]
+            self._concept_type.append(value)
+
+    @property
+    def cui_to_morphological_variants_dic(self):
+        return self._cui_to_morphological_variants_dic
+
+    @cui_to_morphological_variants_dic.setter
+    ### assumes that new labels and new variants added simultaneously
+    def cui_to_morphological_variants_dic(self, value):
+        self._cui_to_morphological_variants_dic[self._concept_type[-1]]=value
+
+    @property
+    def subject_cuis(self):
+        return self._subject_cuis
+
+    @subject_cuis.setter
+    ### assumes that new labels and new variants added simultaneously
+    def subject_cuis(self, value):
+        self._subject_cuis[self._concept_type[-1]] = value
+
+    @property
+    def ancestor_mappings(self):
+        return self._ancestor_mappings
+
+    @ancestor_mappings.setter
+    ### assumes that new labels and new variants added simultaneously
+    def ancestor_mappings(self, value):
+        self._ancestor_mappings[self._concept_type[-1]] = value
+
+
+
 
 
 def make_quickumls_annotations(file_range):
@@ -339,12 +370,19 @@ def regex_matcher(parsed_doc,cui_to_morphological_variants_dic,annotation_offset
         sentence_offset= sentence[0].idx+annotation_offset
         sentence=str(sentence)
         for cui in cui_to_morphological_variants_dic:
+            if type(cui_to_morphological_variants_dic[cui]) != list:
+                cui_to_morphological_variants_dic[cui]=[cui_to_morphological_variants_dic[cui]]
             for variant in cui_to_morphological_variants_dic[cui]:
                 # found_phrase = re.findall(r'([a-z\-A-Z]*?' + variant + '[a-zA-Z\-]*?)', str(sentence))
-                if cui != 'C1298908':
+                # if cui != 'C1298908':
+                short_found_phrase=False
+                variant = variant.strip('*')
+                variant = variant.strip('+')
+                if len(variant)>3: #find any word/phrases containing variant if long enough (good for affixes esp.)
                     found_phrase = re.findall(r'[^0-9a-zA-Z]*([A-Za-z\-]*' + variant + r'[A-Za-z\-]*)[^0-9a-zA-Z]*', str(sentence),flags=re.IGNORECASE)
-                else: #special case for dealing with 'no'
-                    found_phrase=re.findall(r'[\.\s]('+variant+r')[\.\s]',str(sentence),flags=re.IGNORECASE)
+                else:
+                    #only take whole word matches if short variant is used (good for short negators and qualifiers)
+                    short_found_phrase=re.findall(r'([\.\s]('+variant+r')[\.\s])',str(sentence),flags=re.IGNORECASE)
                 ### expand phrase to caputure full word in which shorted term is found
                 if found_phrase:
                     stop_index = 0
@@ -352,6 +390,22 @@ def regex_matcher(parsed_doc,cui_to_morphological_variants_dic,annotation_offset
                         ###CONVERT THIS TO THE SPACY WAY
                         start_index = sentence[stop_index:].index(phrase)
                         stop_index = start_index + len(phrase)
+                        found_and_indexed_phrases.append({'cui':cui,'ngram':phrase, 'start':start_index + sentence_offset, 'end':stop_index + sentence_offset,'sentence':sent_count})
+                        # print phraseAndIndex
+                if short_found_phrase:
+                    stop_index = 0
+                    for phrase in short_found_phrase:
+                        searchable_form = phrase[0]
+                        true_phrase=phrase[1]
+                        ###CONVERT THIS TO THE SPACY WAY
+                        start_index = sentence[stop_index:].index(searchable_form)
+
+                        this_start= sentence.index(searchable_form)
+                        stop_index = start_index + len(searchable_form)
+
+                        start_index += sentence[start_index-1:].index(true_phrase) - 1
+                        stop_index=start_index+len(true_phrase)
+                        phrase=true_phrase
                         found_and_indexed_phrases.append({'cui':cui,'ngram':phrase, 'start':start_index + sentence_offset, 'end':stop_index + sentence_offset,'sentence':sent_count})
                         # print phraseAndIndex
     return found_and_indexed_phrases
@@ -377,16 +431,80 @@ def make_ancestry_mappings(umls_navigator):
     return cui_to_ancestor
 
 
-def do_quickumls(containers,full_input_path,note_offset=0):
-    ### TO-DO: have this take in the path to quickumls, don't iterate directly here (do spacy style folder thing)
+def do_quickumls(container,full_input_path,snomed_description_path,snomed_relationship_path,mrconso_path,note_offset=0,negation=1,modifiers='qualifier_minimal'):
+
+    ### TO-DO: have this take in the path to quickumls, don't iterate directly here (do sklearn style folder thing)
+        ## make SNOMED things (qualifiers and negators), be an auto-run type deal, unless they something is passed
+        ## use container just to hold fancy things
     ### ideally woudl alter this to handle other cuis
+
+    ############### AUTO-NEGATION HANDLING ##################
+    # if negation ==1:
+    import os.path,json
+    from extract_pertinent_terms import snomedNavigator,umlsNavigator,node
+
+    if os.path.isfile('negation_mappings.json'):
+        with open('negation_mappings.json') as fp:
+            negation_mappings = json.load(fp)
+    else:
+        snowy = snomedNavigator(description_full_path=snomed_description_path, stated_relationship_path=snomed_relationship_path)
+        snowy.get_concept_terms(concept_type='negation')
+        snowy.make_snomed_umls_navigator(mrconso_path=mrconso_path)
+        snowy.get_cui_mappings()
+        cui_to_term_dict = {}
+        for mapping in snowy.cui_mappings:
+            cui_to_term_dict[mapping] = snowy.cui_mappings[mapping].term
+        cui_to_term_dict['C1298908']='No' # allows for better regex searching
+        with open('negation_mappings.json','wb') as negation_file:
+            json.dump(cui_to_term_dict,negation_file)
+        negation_mappings=cui_to_term_dict
+
+    ################ AUTO-QUALIFIER HANDLING ###############
+    if modifiers == 'qualifier_minimal':
+        if os.path.isfile('qualifier_minimal_mappings.json'):
+            with open('qualifier_minimal_mappings.json') as fp:
+                qualifier_mappings = json.load(fp)
+        else:
+            snowy = snomedNavigator(description_full_path=snomed_description_path, stated_relationship_path=snomed_relationship_path)
+            snowy.get_concept_terms(concept_type='qualifier_minimal')
+            snowy.make_snomed_umls_navigator(mrconso_path=mrconso_path)
+            snowy.get_cui_mappings()
+            cui_to_term_dict={}
+            for mapping in snowy.cui_mappings:
+                cui_to_term_dict[mapping] = snowy.cui_mappings[mapping].term
+            with open('qualifier_minimal_mappings.json','wb') as modifier_file:
+                json.dump(cui_to_term_dict,modifier_file)
+            qualifier_mappings = cui_to_term_dict
+
+    elif modifiers == 'qualifier':
+        if os.path.isfile('qualifier_mappings.json'):
+            with open('qualifier_mappings.json','wb') as fp:
+                qualifier_mappings = json.load(fp)
+        else:
+            snowy = snomedNavigator(description_full_path=snomed_description_path,
+                                    stated_relationship_path=snomed_relationship_path)
+            snowy.get_concept_terms(concept_type='qualifier')
+            snowy.make_snomed_umls_navigator(mrconso_path=mrconso_path)
+            snowy.get_cui_mappings()
+            cui_to_term_dict = {}
+            for mapping in snowy.cui_mappings:
+                cui_to_term_dict[mapping] = snowy.cui_mappings[mapping].term
+            with open('qualifier_mappings.json') as modifier_file:
+                json.dump(cui_to_term_dict, modifier_file)
+            qualifier_mappings = cui_to_term_dict
+
+    ##########################################################
+
+
+
+
+    ### AUTO QUALIFIER HANDLING ####
     from QuickUMLS.quickumls import QuickUMLS
 
     quickumls_fp = '/usr/local/lib/python2.7/dist-packages/QuickUMLS/quickUMLS-install'
     matcher = QuickUMLS(quickumls_fp=quickumls_fp, overlapping_criteria='length', threshold=.7,
                         similarity_name='cosine')
-    if type(containers) is not list:
-        containers=[containers]
+
 
     thisFile = list(csv.reader(open(full_input_path, 'rU'), delimiter=','))
     file_text = thisFile[0][-1]
@@ -396,6 +514,11 @@ def do_quickumls(containers,full_input_path,note_offset=0):
 
     ### 1. RUN QUICK UMLS ON FILE ####
     found_entities,parsed_doc = matcher.match(text=file_text, best_match=True, ignore_syntax=False)
+    for found_entity in found_entities:
+        while type(found_entity)==list:
+            found_entity = found_entity[0]
+        found_entity['end'] += annotation_offset
+        found_entity['start'] += annotation_offset
 
     # for entity in found_entities:
     #     print entity
@@ -404,50 +527,79 @@ def do_quickumls(containers,full_input_path,note_offset=0):
     qualifier_entities = []
     ancestor_mappings={}
     from util import merge_dicts
-    for cui_container in containers:
-        if cui_container.ancestor_mappings:
-            if len(ancestor_mappings) > 0:
-                ancestor_mappings = merge_dicts(ancestor_mappings,cui_container.ancestor_mappings)
-            else:
-                ancestor_mappings=cui_container.ancestor_mappings
-        subject_cuis = cui_container.subject_cuis
-        qualifier_cuis = cui_container.qualifier_cuis
-        negation_cuis = cui_container.negation_cuis
+    # for concept_type in container.concept_type:
+    # for cui_container in container:
+
+    #### FIND SUBJECT CUIS #########
+    for concept_type in container.concept_type:
+        if len(ancestor_mappings)>0:
+            ancestor_mappings=merge_dicts(ancestor_mappings,container.ancestor_mappings[concept_type])
+        else:
+            ancestor_mappings=container.ancestor_mappings[concept_type]
+
+        subject_cuis=container.subject_cuis[concept_type]
         for findings in found_entities:
             while type(findings) ==list:
-                findings = findings [0]
+                findings = findings [0] ###navigates down to the best finding
 
         ### 2. Compare CUIs to CUI tree ####
             ## TO - DO - add in complication and such (custom job)
 
             if findings['cui'] in subject_cuis:
                 subject_entities.append(findings)
-            elif findings['cui'] in negation_cuis and findings['similarity'] > .9: ## need higher similarity to avoid lots of false positives (e.g. inflammatory as negation for noninflammatory)
-                negation_entities.append(findings)
-            elif findings['cui'] in qualifier_cuis:
-                qualifier_entities.append(findings)
+                if 'concept_type' not in findings:
+                    findings['concept_type'] = concept_type
 
-        if cui_container.cui_to_morphological_variants_dic:
-            regex_subject_findings=regex_matcher(parsed_doc=parsed_doc,cui_to_morphological_variants_dic=cui_container.cui_to_morphological_variants_dic,
+            if findings['cui'] in qualifier_mappings:
+                qualifier_entities.append(findings)
+                if 'concept_type' not in findings:
+                    findings['concept_type'] = 'qualifier'
+
+            if findings['cui'] in negation_mappings:
+                if findings['similarity']>.9 :## accounts for similarity between negation and non-negation
+                    negation_entities.append(findings)
+                if 'concept_type' not in findings:
+                    findings['concept_type'] = 'negation'
+
+
+        if container.cui_to_morphological_variants_dic[concept_type]:
+            regex_subject_findings=regex_matcher(parsed_doc=parsed_doc,cui_to_morphological_variants_dic=container.cui_to_morphological_variants_dic[concept_type],
                           annotation_offset=annotation_offset)
         else:
             regex_subject_findings=None
         if regex_subject_findings:
+            for finding in regex_subject_findings:
+                finding['concept_type']=concept_type
             subject_entities+=regex_subject_findings
-    regex_negation_finding = regex_matcher(parsed_doc=parsed_doc,cui_to_morphological_variants_dic={'C1298908':['No']},annotation_offset=annotation_offset)
-    negation_entities+= regex_negation_finding
 
-    for finding in subject_entities:
-        finding['concept_type'] = 'subject'
-        finding['priority'] = 1
-    for finding in negation_entities:
-        finding['concept_type'] = 'negation'
-        finding['priority'] = 2
-    for finding in qualifier_entities:
-        finding['concept_type'] = 'qualifier'
-        finding['priority'] = 2
+    regex_negation_finding = regex_matcher(parsed_doc=parsed_doc,cui_to_morphological_variants_dic=negation_mappings,annotation_offset=annotation_offset)
+    negation_entities+= regex_negation_finding
+    # regex_qualifier_findings = regex_matcher(parsed_doc=parsed_doc,cui_to_morphological_variants_dic=qualifier_mappings,annotation_offset=annotation_offset)
+    # qualifier_entities+=regex_qualifier_findings
+
+    ##### THROW IN QUALIFIER AND NEGATION WITH PRIORITY VALUES HERE #######
+
+    # for finding in subject_entities:
+    #     # finding['concept_type']= 'subject'
+    #     finding['priority'] = 1
+    # for finding in negation_entities:
+    #     finding['concept_type'] = 'negation'
+    #     finding['priority'] = 2
+    # for finding in qualifier_entities:
+    #     finding['concept_type'] = 'qualifier'
+    #     finding['priority'] = 2
     from operator import itemgetter
+    for finding in subject_entities:
+        finding['priority']=1
+    for finding in negation_entities:
+        finding['priority']=2
+        finding['concept_type']='negation'
+    for finding in qualifier_entities:
+        finding['priority']=2
+        finding['concept_type']='qualifier'
     all_findings = subject_entities + negation_entities + qualifier_entities
+
+
 
     all_findings = removeOverlappingPhrases(all_findings)
     relevant_findings=[]
@@ -458,6 +610,8 @@ def do_quickumls(containers,full_input_path,note_offset=0):
     from keyValue import keyValue
     key_value_dic={}
     relevant_sentences = []
+    # print 'ALL FINDINGS BELOW:'
+    # print all_findings
     for finding in all_findings:
         count+=1
         if finding['priority']==1:
@@ -465,9 +619,9 @@ def do_quickumls(containers,full_input_path,note_offset=0):
             this_sentence=finding['sentence']
             relevant_sentences.append(this_sentence)
             if ancestor_mappings != 0:
-                this_kv=keyValue(mapped_term=ancestor_mappings[finding['cui']],concept=finding['cui'],source_document_path=full_input_path,concept_related_terms={'ngram':finding['ngram'],'start':finding['start']+note_offset,'end':finding['end']+note_offset},sentence=this_sentence)
+                this_kv=keyValue(concept_type=finding['concept_type'],mapped_term=ancestor_mappings[finding['cui']],concept=finding['cui'],source_document_path=full_input_path,concept_related_terms={'cui':finding['cui'],'ngram':finding['ngram'],'start':finding['start']+note_offset,'end':finding['end']+note_offset},sentence=this_sentence)
             else:
-                this_kv=keyValue(mapped_term=finding['concept_type'],concept=finding['cui'],source_document_path=full_input_path,concept_related_terms={'ngram':finding['ngram'],'start':finding['start']+note_offset,'end':finding['end']+note_offset},sentence=this_sentence)
+                this_kv=keyValue(concept_type=finding['concept_type'],mapped_term=finding['concept_type'],concept=finding['cui'],source_document_path=full_input_path,concept_related_terms={'cui':finding['cui'],'ngram':finding['ngram'],'start':finding['start']+note_offset,'end':finding['end']+note_offset},sentence=this_sentence)
 
             if this_sentence in key_value_dic:
                 current_kvs=key_value_dic[this_sentence]
@@ -511,20 +665,24 @@ def make_brat_annotations(kv_list):
     ann_path=txt_path[:-3]+'ann'
     for kv in kv_list:
         mapped_term = kv.mapped_term
-        (concept_ngram,start,stop)=kv.concept_related_terms
-        concept_brat=[mapped_term,kv.concept_related_terms['start'],kv.concept_related_terms['end'],kv.concept_related_terms['ngram']]
+        concept_ngram=kv.concept_related_terms['ngram']
+        start = kv.concept_related_terms['start']
+        stop = kv.concept_related_terms['end']
+        # (concept_ngram,start,stop)=kv.concept_related_terms
+        concept_brat=(mapped_term,kv.concept_related_terms['start'],kv.concept_related_terms['end'],kv.concept_related_terms['ngram'])
         finding_list.append(concept_brat)
         if kv.negation:
             for negator in kv.negation:
-                this_negator=['negation',negator['start'],negator['end'],negator['ngram']]
+                this_negator=('negation',negator['start'],negator['end'],negator['ngram'])
                 if negator not in finding_list:
                     finding_list.append(this_negator)
         if kv.modifiers:
             for modifier in kv.modifiers:
-                this_modifier=['modifiers',modifier['start'],modifier['end'],modifier['ngram']]
+                this_modifier=('modifiers',modifier['start'],modifier['end'],modifier['ngram'])
                 if this_modifier not in finding_list:
                     finding_list.append(this_modifier)
     from operator import itemgetter
+    finding_list=set(finding_list)
     finding_list=sorted(finding_list,key=itemgetter(1))
     i=0
     with open(ann_path,'w') as fp:
@@ -532,10 +690,11 @@ def make_brat_annotations(kv_list):
             i+=1
             term_count='T'+str(i)
             annotation_type = annotation[0]
+            annotation_type=annotation_type.replace(' ','_') ##brat will break on spaces
             start= annotation[1]
             stop = annotation[2]
             ngram=annotation[3]
-            brat_formatted_finding = term_count+'\t'+annotation_type+' '+str(start)+' '+str(stop)+' '+ngram+'\n'
+            brat_formatted_finding = term_count+'\t'+annotation_type+' '+str(start)+' '+str(stop)+'\t'+ngram+'\n'
             fp.write(brat_formatted_finding)
 
 
@@ -560,46 +719,132 @@ def make_brat_annotations(kv_list):
 # print umls_surgery_nav.concept_network_dictionary
 ##############################################################################################
 
+###### Easy Call ######
+#UMLS
+## target_mappings - DONE
+## get synonyms  - DONE
+## ancestor mappings to target - DONE
+
+#SNOMED
+## easy call term type - DONE
+## map to UMLS cuis  - DONE
+## build in morphological variant dic - DONE
+
+
+#BOTH
+## make 'fill container' method - DONE
+## chanage containers to get rid of negation part and just make it's own containers with names (or change cuis to dics of dics) - DONE
+## make quick call from here - To do
+
+
+###################### TEST OF SIMPLE CODE / DEBUG ###################
+# from extract_pertinent_terms import umlsNavigator,snomedNavigator,cuiContainer,node
+# from util import save_object,load_object
+#
+# ibd_containerr=load_object('ibd-container.pkl')
+#
+# mrrel_path = '/usr/share/2017AB-full/2017AB/META/MRREL.RRF'
+# mrconso_path = '/usr/share/2017AB-full/2017AB/META/MRCONSO.RRF'
+# description_path='/home/john/Downloads/SnomedCT_USEditionRF2_PRODUCTION_20180301T183000Z/Full/Terminology/sct2_Description_Full-en_US1000124_20180301.txt'
+# relationship_path ='/home/john/Downloads/SnomedCT_USEditionRF2_PRODUCTION_20180301T183000Z/Full/Terminology/sct2_StatedRelationship_Full_US1000124_20180301.txt'
+# do_quickumls(container=ibd_containerr,full_input_path='/home/john/Desktop/nlp_work/test-annotations/20-classified.txt',snomed_description_path=description_path,snomed_relationship_path=relationship_path,mrconso_path=mrconso_path)
+
+
+##############################END################################
+
+
+################## PREPARE SUBJECT CUI CONTAINERS ####################################
+# ## Build the initial anatomy navigator object
+# mrrel_path = '/usr/share/2017AB-full/2017AB/META/MRREL.RRF'
+# mrconso_path = '/usr/share/2017AB-full/2017AB/META/MRCONSO.RRF'
+#
+# ## Anatomy ##
+# locations=['ileum','duodenum','jejunum','ascending colon','transverse colon','descending colon','sigmoid colon','rectum','stomach','esophagus']
+# anatomy_nav=umlsNavigator(mrconso_path=mrconso_path,mrrel_path=mrrel_path,concept_type='anatomy',target_terms=locations)
+# anatomy_parent_cui = anatomy_nav.term_to_cui('Gastrointestinal tract')[0]
+# anatomy_nav.get_related_cuis(subject_cui=anatomy_parent_cui)
+#
+# ## Surgery ##
+# surgery_nav = umlsNavigator(mrconso_path=mrconso_path,mrrel_path=mrrel_path,concept_type='surgery',target_terms=['Surgery'])
+# surgery_parent_term= surgery_nav.term_to_cui('Surgery')[0]
+# surgery_nav.get_related_cuis(subject_cui=surgery_parent_term)
+#
+# ## Complications ##
+# complications=["perianal fistula","abscess", "pouch","enteroenteric fistula", "perianal abscess", "fistula","distention"]
+# complications_nav=umlsNavigator(mrconso_path=mrconso_path,mrrel_path=mrrel_path,ontologies='SNOMEDCT_US',target_terms=complications)
+#
+# ## Pour Containers ##
+# cui_container=anatomy_nav.pour_container(concept_type='anatomy')
+# cui_container=surgery_nav.pour_container(concept_type='surgery',cui_container=cui_container)
+# cui_container=complications_nav.pour_container(concept_type='complications',cui_container=cui_container)
+# save_object(obj=cui_container,filename='ibd-container.pkl')
+
+########################END####################################3
+
+# from extract_pertinent_terms import umlsNavigator,snomedNavigator,cuiContainer,node
+from util import save_object,load_object
+ibd_containerr=load_object('ibd-container.pkl')
+mrrel_path = '/usr/share/2017AB-full/2017AB/META/MRREL.RRF'
+mrconso_path = '/usr/share/2017AB-full/2017AB/META/MRCONSO.RRF'
+description_path='/home/john/Downloads/SnomedCT_USEditionRF2_PRODUCTION_20180301T183000Z/Full/Terminology/sct2_Description_Full-en_US1000124_20180301.txt'
+relationship_path ='/home/john/Downloads/SnomedCT_USEditionRF2_PRODUCTION_20180301T183000Z/Full/Terminology/sct2_StatedRelationship_Full_US1000124_20180301.txt'
+from util import find_files_in_folder
+note_paths=find_files_in_folder(directory='/home/john/Desktop/brat-v1.3_Crunchy_Frog/data/new-method-annotations/',extension='.txt')
+i=-1
+fp_kv_dict={}
+read_lines=[]
+with open('completed_files.txt', 'r') as f:
+    for line in f:
+        read_lines.append(line.strip('\n'))
+read_lines=set(read_lines)
+### run on all notes ###
+for path in note_paths:
+    if path in read_lines:continue
+    key_values=do_quickumls(container=ibd_containerr,
+                 full_input_path=path,
+                 snomed_description_path=description_path, snomed_relationship_path=relationship_path,
+                 mrconso_path=mrconso_path)
+    fp_kv_dict[path]=key_values
+    if key_values:
+        make_brat_annotations(key_values)
+    with open('completed_files.txt','a') as completed_record:
+        completed_record.write(path+'\n')
+save_object(fp_kv_dict,'file_kvs.pkl')
 
 
 
-########################## START RUN QUICKUMLS STYLE ANNOTATIONS ###############################
-# import util
-# import json
-# with open('umls_container_json_input_examples/anatomy-mappings.json') as fp:
-#     anatomy_mappings= json.load(fp)
-# with open('umls_container_json_input_examples/negation_mappings.json') as fp:
-#     negation_mappings= json.load(fp)
-# with open('umls_container_json_input_examples/qualifier_mappings.json') as fp:
-#     qualifier_mappings= json.load(fp)
-# with open ('umls_container_json_input_examples/morphological_variant_mappings.json') as fp:
-#     variant_mappings=json.load(fp)
-# with open('umls_container_json_input_examples/surgery_mappings.json') as fp:
-#     surgery_mappings=json.load(fp)
-# with open ('umls_container_json_input_examples/surgical_suffixes.json') as fp:
-#     surgical_variants = json.load(fp)
-# with open ('umls_container_json_input_examples/complication_mappings.json') as fp:
-#     complication_mappings=json.load(fp)
-# with open('umls_container_json_input_examples/anatomy_ancestor_mapping.json') as fp:
-#     anatomy_ancestor_mappings=json.load(fp)
-# surgery_ancestors={}
-#
-# for cui in surgery_mappings:
-#     surgery_ancestors[cui]='Surgery'
-#
-# complication_ancestors={}
-# for cui in complication_mappings:
-#     complication_ancestors[cui]=complication_mappings[cui][0]
-#
-# anatomy_cui_container= cuiContainer(ancestor_mappings=anatomy_ancestor_mappings,container_type='anatomy',cui_to_morphological_variants_dic=variant_mappings,negation_cuis=[cui for cui in negation_mappings],qualifier_cuis=[cui for cui in qualifier_mappings], subject_cuis=[cui for cui in anatomy_mappings])
-# surgical_cui_container= cuiContainer(ancestor_mappings=surgery_ancestors,container_type='surgery',cui_to_morphological_variants_dic=surgical_variants,negation_cuis=[cui for cui in negation_mappings],qualifier_cuis=[cui for cui in qualifier_mappings], subject_cuis=[cui for cui in surgery_mappings])
-# complication_cui_container = cuiContainer(ancestor_mappings=complication_ancestors,container_type='complications',cui_to_morphological_variants_dic=None,negation_cuis=[cui for cui in negation_mappings],qualifier_cuis=[cui for cui in qualifier_mappings], subject_cuis=[cui for cui in complication_mappings])
-#
-# fileNums = range(2500)
-# for number in fileNums:
-#     folderPath = '/home/john/Desktop/nlp_work/test-annotations/'
-#     full_input_path = folderPath + str(number) + "-classified.txt"
-#     key_values = do_quickumls(containers=[anatomy_cui_container,surgical_cui_container,complication_cui_container],full_input_path=full_input_path)
-#     make_brat_annotations(key_values)
+from keyValue import keyValue
+# fp_kv_dict=load_object('file_kvs.pkl')
+# print fp_kv_dict
+# for path in fp_kv_dict:
+#     for kv in fp_kv_dict[path]:
+#         print '******************************START***********************************'
+#         print 'concept type',kv.concept_type
+#         print 'concept terms',kv.concept_related_terms
+#         print 'mapped terms =',kv.mapped_term
+#         print 'negation',kv.negation
+#         print 'activity terms',kv.activity_terms
+#         print 'modifiers',kv.modifiers
+
 ################################## STOP SAMPLE CODE ###################################
 
+
+
+#################### HOW TO MODIFY THE FTR CREATOR ?? #######
+### USE KVS
+### GROUP THINGS MATRICES BY CONCEPT TYPE
+### MAP TO NEGATORS & MODIFIERS (ALL PERMUTATIONS)
+### NO CONCEPT, CONCEPT TYPE X
+### MODIFIER A ONLY, NEGATION A ONLY, NEGATION + MODIFIER
+### ONLY REPRESENT WHAT IS SEEN
+
+
+### NEGATION, NEGATION + MODIFIER, MODIFIER
+### IF NEGATION + MODIFIER IN LIST, ADD 1 THERE
+### ELSE: ADD 1 AT END, AND ADD 0 TO END OF ALL OTHER FINDINGS
+
+######### STEPS FOR FTR CREATOR USING ABOVE PRINCIPLES ###########
+#1. GO THROUGH KV's and make dictionary (cui to index) of all present concepts, modifiers, and negations
+    ## sort mapping by cui/alphabetically (depending on term or cui) for each type, so the same matrix will be generated each time
+#2. Make an interpreter of term to cuis (for use in human interpretation) [or just used preferred term?]
+#3. Go back through and map each of the findings to the appropriate locale

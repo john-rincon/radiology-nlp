@@ -323,7 +323,7 @@ def removeOverlappingPhrases(foundList):
     for line in json_list:
         foundList.append(json.loads(line))
     foundList.sort(key=itemgetter('start','end'))
-    for item in foundList: print item
+    # for item in foundList: print item #prints findings
     # print foundList
     for item in foundList:
         current_item=item
